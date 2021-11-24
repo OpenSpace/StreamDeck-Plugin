@@ -1,0 +1,94 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+	<title>com.openspaceproject</title>
+	<meta charset="utf-8" />
+  <script src="openspace-api.js"></script>
+</head>
+
+<body>
+  <script>
+    const Debug = true;
+    let scripts = {}
+    let openspace = null;
+
+    function connectElgatoStreamDeckSocket(inPort, inPluginUUID, inRegisterEvent, inInfo) {
+      let websocket = new WebSocket("ws://127.0.0.1:" + inPort);
+      websocket.onopen = function () {
+				const json = {
+					"event": inRegisterEvent,
+					"uuid": inPluginUUID
+				};
+
+				websocket.send(JSON.stringify(json));
+      };
+
+      let api = window.openspaceApi('127.0.0.1', 4682);
+      api.onDisconnect(function() {
+        openspace = null;
+      });
+        
+      api.onConnect(async () => {
+        try {
+          openspace = await api.library();
+        } catch (e) {
+          console.log('OpenSpace library could not be loaded: Error: \n', e)
+          return;
+        }
+      })
+      api.connect();
+
+			websocket.onmessage = function (evt) {
+        if (Debug) {
+          const json = {
+            "event": "logMessage",
+            "payload": {
+              "message": evt.data
+            }
+          };
+          websocket.send(JSON.stringify(json));
+        }
+				
+        
+        let jsonObj = JSON.parse(evt.data);
+				let event = jsonObj['event'];
+				let action = jsonObj['action'];
+				let context = jsonObj['context'];
+				let jsonPayload = jsonObj['payload'] || {};
+
+        if (event == "sendToPlugin") {
+          if (action == "com.openspaceproject.script") {
+            scripts[context] = jsonPayload.script
+
+            const json = {
+              "event": "setSettings",
+              "context": context,
+              "payload": scripts
+            };
+
+            websocket.send(JSON.stringify(json));
+          }
+        }
+
+        if (event == "keyUp") {
+          let script = scripts[context];
+
+          const json = {
+            "event": "logMessage",
+            "payload": {
+              "message": script
+            }
+          };
+          websocket.send(JSON.stringify(json));
+
+          if (script) {
+            api.executeLuaScript(script, false);
+          }
+        }
+      }
+
+			websocket.onclose = function () {};
+    }
+  </script>
+</body>

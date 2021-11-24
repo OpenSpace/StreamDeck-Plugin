@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>com.elgato.numberdisplay PI</title>
+  <link rel="stylesheet" href="sdpi.css">
+</head>
+
+<body>
+  <div class="sdpi-wrapper">
+    <div class="sdpi-item">
+      <div class="sdpi-item-label">Script</div>
+      <span class="sdpi-item-value textarea">
+        <textarea id="script" type="textarea" onchange="sendValueToPlugin(event.target.value)"></textarea>
+      </span>      
+    </div>
+  </div>
+
+  <script>
+    let websocket = null;
+    let uuid = '';
+    let actionInfo = {};
+
+    function connectElgatoStreamDeckSocket(inPort, inUUID, inRegisterEvent, inInfo, inActionInfo) {
+        uuid = inUUID;
+        actionInfo = JSON.parse(inActionInfo); // cache the info
+        websocket = new WebSocket('ws://127.0.0.1:' + inPort);
+
+        websocket.onopen = function() {
+          const json = {
+            event: inRegisterEvent,
+            uuid: inUUID
+          };
+          websocket.send(JSON.stringify(json));
+
+          const settings = {
+            "event": "getSettings",
+            "context": uuid
+          }
+          websocket.send(JSON.stringify(settings));
+        };
+
+        websocket.onmessage = function(evt) {
+          const json = {
+            "event": "logMessage",
+            "payload": {
+              "message": evt.data
+            }
+          };
+          websocket.send(JSON.stringify(json));
+
+          let jsonObj = JSON.parse(evt.data);
+          let event = jsonObj['event'];
+          let action = jsonObj['action'];
+          let context = jsonObj['context'];
+          let jsonPayload = jsonObj['payload'] || {};
+
+          if (event == "didReceiveSettings") {
+            let payload = jsonPayload.settings[context];
+            if (payload != "undefined") {
+              let element = document.getElementById("script");
+              element.value = payload;
+            }
+          }
+        };
+    }
+
+    function sendValueToPlugin(value) {
+      if (websocket) {
+        const jsonPlugin = {
+          "action": actionInfo["action"],
+          "event": "sendToPlugin",
+          "context": uuid,
+          "payload": {
+            "script": value
+          }
+        };
+
+        websocket.send(JSON.stringify(jsonPlugin));
+
+        const jsonSettings = {
+          "event": "setSettings",
+          "context": uuid,
+          "payload": {
+            "script": value
+          }
+        }
+        websocket.send(JSON.stringify(jsonSettings));
+      }
+    }
+  </script>
+</body>
